@@ -1,0 +1,55 @@
+name: Build WDA IPA (unsigned, for TrollStore)
+
+on:
+  workflow_dispatch:    # cho phép bấm "Run workflow" thủ công
+  push:
+    branches: [master, main]
+
+jobs:
+  build:
+    runs-on: macos-14   # Xcode 15.x, đủ cho iOS 15-17
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos || true
+
+      - name: Build WebDriverAgentRunner (unsigned)
+        run: |
+          set -e
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            IPHONEOS_DEPLOYMENT_TARGET=14.0
+
+      - name: Package as IPA
+        run: |
+          set -e
+          APP_PATH="build/Build/Products/Debug-iphoneos/WebDriverAgentRunner-Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "App not built at $APP_PATH"
+            find build/Build/Products -maxdepth 4 -name "*.app" -print
+            exit 1
+          fi
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -qr WebDriverAgentRunner.ipa Payload
+          ls -lh WebDriverAgentRunner.ipa
+          unzip -l WebDriverAgentRunner.ipa | head -20
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebDriverAgentRunner-ipa
+          path: WebDriverAgentRunner.ipa
+          retention-days: 30
